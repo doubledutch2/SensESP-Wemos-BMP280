@@ -51,13 +51,12 @@ auto* pBMPtemperature = new BMP280value(pBMP280, temperature,  read_delay, "/Tem
 auto* pBMPpressure = new BMP280value(pBMP280, pressure,  pressure_read_delay, "/Pressure");
       
       pBMPpressure->connectTo(new SKOutputNumber("environment.outside.pressure"));
-
 /*
 // Do the same for the humidity value.
 auto* pBMPhumidity = new BMP280value(pBMP280, humidity,  read_delay, "/Humidity");
       
       pBMPhumidity->connectTo(new SKOutputNumber());      
-*/
 
+*/
   sensesp_app->enable();
 });
