@@ -28,7 +28,7 @@ ReactESP app([] () {
   
   // true will disable systemHz, freemem, uptime, and ipaddress "sensors"
   
-  sensesp_app = new SensESPApp(noStdSensors);
+  sensesp_app = new SensESPApp("SensESP","","","",0,NONE);
 
 //scan_i2c();
 
