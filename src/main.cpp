@@ -1,4 +1,4 @@
-// BMP280_example.cpp
+// BME280_example.cpp
 
 #include <Arduino.h>
 
@@ -7,56 +7,80 @@
 #define USE_LIB_WEBSOCKET true
 
 #include "sensesp_app.h"
+#include "sensesp_app_builder.h"
+#include "sensors/bme280.h"
 #include "signalk/signalk_output.h"
-#include "sensors/bmp280.h"
-#include "i2c_tools.h"
+#include "transforms/dew_point.h"
+#include "transforms/air_density.h"
+#include "transforms/heat_index.h"
 
-// #include "sensors/i2c_tools.h"
+ReactESP app([]() {
+#ifndef SERIAL_DEBUG_DISABLED
+  SetupSerialDebug(115200);
+#endif
 
-ReactESP app([] () {
-  #ifndef SERIAL_DEBUG_DISABLED
-  Serial.begin(115200);
+  // sensesp_app = new SensESPApp("sensESP-BME280","openplotter","zuma2021","10.10.10.1",3000);
 
-  // A small arbitrary delay is required to let the
-  // serial port catch up
+  SensESPAppBuilder builder;
+  sensesp_app = builder.set_standard_sensors(NONE)
+              ->set_wifi("openplotter", "zuma2021")
+              ->get_app(); 
+  // Create a BME280, which represents the physical sensor.
+  // 0x77 is the default address. Some chips use 0x76, which is shown here.
+  auto* bme280 = new BME280(0x76);
 
-  delay(100);
-  Debug.setSerialEnabled(true);
-  #endif
+  // If you want to change any of the settings that are set by
+  // Adafruit_BME280::setSampling(), do that here, like this:
+  // bme280->adafruit_bme280->setSampling(); // pass in the parameters you want
 
-  scan_i2c();
-  
-  // true will disable systemHz, freemem, uptime, and ipaddress "sensors"
-  
-  sensesp_app = new SensESPApp("SensESP","","","",0,NONE);
+  // Define the read_delays you're going to use:
+  const uint read_delay = 60000;            // once per second
+  const uint pressure_read_delay = 60000;  // once per minute
 
-//scan_i2c();
+  // Create a BME280Value, which is used to read a specific value from the
+  // BME280, and send its output to Signal K as a number (float). This one is for
+  // the temperature reading.
+  auto* bme_temperature =
+      new BME280Value(bme280, BME280Value::temperature, read_delay, "/Outside/Temperature");
 
-// Create a BMP280, which represents the physical sensor.
-// 0x77 is the default address. Some chips use 0x76, which is shown here.
-auto* pBMP280 = new BMP280(0x76);
+  bme_temperature->connect_to(
+      new SKOutputNumber("environment.outside.temperature"));
+
+  // Do the same for the barometric pressure value. Its read_delay is longer,
+  // since barometric pressure can't change all that quickly. It could be much
+  // longer for that reason.
+  auto* bme_pressure = new BME280Value(bme280, BME280Value::pressure, pressure_read_delay,
+                                       "/Outside/Pressure");
+
+  bme_pressure->connect_to(new SKOutputNumber("environment.outside.pressure"));
+
+  // Do the same for the humidity value.
+  auto* bme_humidity =
+      new BME280Value(bme280, BME280Value::humidity, read_delay, "/Outside/Humidity");
+
+  bme_humidity->connect_to(new SKOutputNumber("environment.outside.humidity"));
 
 
-const uint read_delay = 30000;
-const uint pressure_read_delay = 30000;
+  // Use the transform dewPoint to calculate the dewpoint based upon the temperature and humidity.
+  auto* dew_point = new DewPoint();
 
-// Create a BMP280value, which is used to read a specific value from the BMP280, and send its output
-// to SignalK as a number (float). This one is for the temperature reading.
-auto* pBMPtemperature = new BMP280value(pBMP280, temperature,  read_delay, "/Temperature");
-      
-      pBMPtemperature->connectTo(new SKOutputNumber("environment.outside.temp"));
+  dew_point->connect_from(bme_temperature, bme_humidity)
+          ->connect_to(new SKOutputNumber("environment.outside.dewPointTemperature"));
 
+  // Use the transform airDensity to calculate the air density of humid air based
+  // upon the temperature, humidity and pressure.
+  auto* airDensity = new AirDensity();
 
-// Do the same for the barometric pressure value.
-auto* pBMPpressure = new BMP280value(pBMP280, pressure,  pressure_read_delay, "/Pressure");
-      
-      pBMPpressure->connectTo(new SKOutputNumber("environment.outside.pressure"));
-/*
-// Do the same for the humidity value.
-auto* pBMPhumidity = new BMP280value(pBMP280, humidity,  read_delay, "/Humidity");
-      
-      pBMPhumidity->connectTo(new SKOutputNumber());      
+  airDensity->connect_from(bme_temperature,bme_humidity,bme_pressure)
+          ->connect_to(new SKOutputNumber("environment.outside.airDensity"));
 
-*/
+  // Use the transform heatIndex to calculate the heat index based upon the temperature and humidity.
+  auto* heat_index_temperature = new HeatIndexTemperature();
+
+  heat_index_temperature->connect_from(bme_temperature, bme_humidity)
+          ->connect_to(new SKOutputNumber("environment.outside.heatIndexTemperature"))
+          ->connect_to(new HeatIndexEffect)
+          ->connect_to(new SKOutputString("environment.outside.heatIndexEffect"));
+ 
   sensesp_app->enable();
 });
